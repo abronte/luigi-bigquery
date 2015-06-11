@@ -4,14 +4,21 @@ from luigi_bigquery.job import Job
 from luigi_bigquery.targets.result import ResultTarget
 from luigi_bigquery.targets.bq import DatasetTarget
 from luigi_bigquery.targets.bq import TableTarget
+from luigi_bigquery.targets.gcs import BucketTarget
+from luigi_bigquery.targets.gcs import FileTarget
 
 import luigi
 import jinja2
 import time
 import bigquery
+import string
+import random
 
 import logging
 logger = logging.getLogger('luigi-interface')
+
+def _id_generator(size=8, chars=string.ascii_uppercase + string.digits):
+    return ''.join(random.choice(chars) for _ in range(size))
 
 # Dataset
 
@@ -163,3 +170,59 @@ class QueryTable(Query):
     def run(self):
         query = self.load_query(self.source) if self.source else self.query()
         self.save_as_table(query)
+
+class QueryToGCS(QueryTable):
+    compression = 'NONE' # or GZIP
+    format = 'CSV' # or NEWLINE_DELIMITED_JSON
+    print_header = True
+
+    _dataset_id = 'tmp_{0}'.format(_id_generator())
+    _table_id = 'tbl_{0}'.format(_id_generator())
+
+    def dataset(self):
+        # DO NOT OVERRIDE THIS METHOD
+        return self._dataset_id
+
+    def table(self):
+        # DO NOT OVERRIDE THIS METHOD
+        return self._table_id
+
+    def output(self):
+        return FileTarget(self.bucket(), self.path())
+
+    def bucket(self):
+        return NotImplemented()
+
+    def path(self):
+        return NotImplemented()
+
+    def export_to_gcs(self):
+        result = self.output()
+        client = self.config.get_client()
+
+        job = client.export_data_to_uris(
+                destination_uris=[result.uri()],
+                dataset=self.dataset(),
+                table=self.table(),
+                compression=self.compression,
+                destination_format=self.format,
+                print_header=self.print_header)
+        job_id = job['jobReference'].get('jobId')
+        logger.info("%s: bigquery.job.id: %s", self, job_id)
+
+        try:
+            job_resource = client.wait_for_job(job, timeout=3600)
+        except:
+            raise
+
+    def _cleanup(self):
+        client = self.config.get_client()
+        client.delete_dataset(self._dataset_id, delete_contents=True)
+
+    def run(self):
+        query = self.load_query(self.source) if self.source else self.query()
+        try:
+            self.save_as_table(query)
+            self.export_to_gcs()
+        finally:
+            self._cleanup()
