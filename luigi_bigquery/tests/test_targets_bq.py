@@ -60,4 +60,4 @@ class TableTargetTestCase(TestCase):
 
     def test_exists_check_empty(self):
         eq_(TableTarget('dataset_1', 'table_1', empty=True, config=test_config).exists(), False)
-        eq_(TableTarget('dataset_1', 'table_2', empty=True, config=test_config).exists(), True)
+        eq_(TableTarget('dataset_1', 'table_2', empty=True, config=test_config).exists(), False)
