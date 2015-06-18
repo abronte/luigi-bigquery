@@ -36,11 +36,8 @@ class TableTarget(luigi.Target):
         count = table.get('numRows', 0)
 
         if self.empty:
-            if count == 0:
-                return True
-            else:
-                logger.info('Deleting table: %s.%s', self.dataset_id, self.table_id)
-                client.delete_table(self.dataset_id, self.table_id)
-                return False
+            logger.info('Deleting table: %s.%s', self.dataset_id, self.table_id)
+            client.delete_table(self.dataset_id, self.table_id)
+            return False
         else:
             return True
